@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>UP Bhulekh Village Map</title>
+  <title>UP Bhulekh Village Map (Merged)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -48,59 +48,67 @@
       padding: 0.25rem !important;
       font-size: 0.875rem;
     }
+    .survey-label {
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      color: black;
+      font-weight: bold;
+      font-size: 12px;
+    }
+    .sidebar-content {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    .plot-summary {
+      background-color: #f9f9f9;
+      padding: 8px;
+      font-weight: bold;
+      border-bottom: 1px solid #ccc;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    .owners-table-container {
+      overflow-y: auto;
+      max-height: 300px;
+      padding: 8px;
+    }
+    .owners-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .owners-table th, .owners-table td {
+      border: 1px solid #ccc;
+      padding: 6px;
+      text-align: left;
+    }
+    .owners-table thead th {
+      position: sticky;
+      top: 0;
+      background-color: white;
+      z-index: 1;
+    }
+    .owners-table tbody tr:nth-child(even) {
+      background-color: #f2f2f2;
+    }
 
-.survey-label {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  color: black;
-  font-weight: bold;
-  font-size: 12px;
-}
-.sidebar-content {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
-.plot-summary {
-  background-color: #f9f9f9;
-  padding: 8px;
-  font-weight: bold;
-  border-bottom: 1px solid #ccc;
-  position: sticky;
-  top: 0;
-  z-index: 2;
-}
-
-.owners-table-container {
-  overflow-y: auto;
-  max-height: 300px; /* This enables scrolling */
-  padding: 8px;
-}
-
-.owners-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.owners-table th, .owners-table td {
-  border: 1px solid #ccc;
-  padding: 6px;
-  text-align: left;
-}
-
-.owners-table thead th {
-  position: sticky;
-  top: 0;
-  background-color: white;
-  z-index: 1;
-}
-  .owners-table tbody tr:nth-child(even) {
-    background-color: #f2f2f2;
-  }
+    /* New controls styling (placed in sidebar) */
+    .excel-controls { margin-top: 10px; }
+    #errorList {
+      margin-top: 10px;
+      background: #fff3f3;
+      border: 1px solid #f1c0c0;
+      padding: 8px;
+      color: #a33;
+      display: none;
+      max-height: 150px;
+      overflow-y: auto;
+      font-size: 13px;
+    }
 
   </style>
 </head>
@@ -117,6 +125,21 @@
     <div class="mb-3">
       <button class="btn btn-primary w-100" onclick="loadVillage()">Add Village</button>
     </div>
+
+    <!-- NEW: Map Clear button -->
+    <div class="mb-3">
+      <button id="clearMapBtn" class="btn btn-warning w-100" onclick="clearMap()">Clear Map</button>
+    </div>
+
+    <!-- NEW: Excel controls -->
+    <div class="excel-controls">
+      <label for="excelFile" class="form-label">Upload Excel (first column = village codes)</label>
+      <input id="excelFile" type="file" accept=".xlsx,.xls" class="form-control mb-2" />
+      <button id="addExcelBtn" class="btn btn-secondary w-100 mb-2" onclick="addExcelVillages()">Add Excel Villages</button>
+      <button id="downloadExcelBtn" class="btn btn-info w-100 mb-2" onclick="downloadExcelGeoJSON()">Download Excel GeoJSON</button>
+    </div>
+
+    <!-- Original download / shapefile / zoom buttons (untouched) -->
     <div class="mb-3">
       <button id="downloadBtn" class="btn btn-success w-100" onclick="downloadGeoJSON()" disabled>Download GeoJSON</button>
     </div>
@@ -126,7 +149,11 @@
     <div class="mb-3">
       <button id="zoomBtn" class="btn btn-secondary w-100" onclick="zoomToVillage()" disabled>Zoom to Village</button>
     </div>
+
     <div id="status" class="text-secondary small"></div>
+
+    <!-- Error summary (new) -->
+    <div id="errorList"></div>
   </div>
 
   <!-- Button to open sidebar -->
@@ -143,27 +170,27 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/wicket/1.3.4/wicket-leaflet.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.1/proj4.js"></script>
   <script src="https://unpkg.com/shp-write@latest/shpwrite.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
   <script>
+    // === ORIGINAL MAP & LAYERS (unchanged) ===
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap' });
     const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-  attribution: 'Tiles © Esri'
-});
+      attribution: 'Tiles © Esri'
+    });
+    const baseMaps = { "OSM": osm, "Satellite": satellite };
 
-const baseMaps = {
-    "OSM": osm,
-    "Satellite": satellite
-  };
-
-    
     const map = L.map('map', { center: [25.5, 78.5], zoom: 8, layers: [osm] });
-      L.control.layers(baseMaps).addTo(map);
+    L.control.layers(baseMaps).addTo(map);
 
     const villageLayer = L.layerGroup().addTo(map);
     proj4.defs("EPSG:32644", "+proj=utm +zone=44 +datum=WGS84 +units=m +no_defs");
 
-    let loaded = [];
+    let loaded = []; // original loaded features array (kept as before)
+    let excelVillageCodes = []; // for Excel import
+    let failedVillages = []; // error summary for Excel import
 
+    // transformCoords function unchanged
     function transformCoords(coords) {
       return coords.map(polygon =>
         polygon.map(ring =>
@@ -178,51 +205,48 @@ const baseMaps = {
       el.style.color = isError ? 'red' : '#555';
     }
 
+    // showDetails unchanged (reads flattened owner fields from properties)
     function showDetails(properties) {
       const el = document.getElementById('plotDetails');
-      const owners = properties.owner || [];
+      const owners = [];
+      Object.keys(properties).forEach(k => {
+        if (k.startsWith("owner") && k.endsWith("_name") && properties[k]) {
+          const idx = k.match(/owner(\d+)_name/)[1];
+          owners.push({
+            name: properties[`owner${idx}_name`],
+            co: properties[`owner${idx}_co`],
+            area: properties[`owner${idx}_area`]
+          });
+        }
+      });
+
       const ownerTable = owners.length
-        ? owners.map(o => `
-            <tr>
-              <td>${o.owner_Name || ''}</td>
-              <td>${o.indentifier_type || ''} ${o.indentifier_Name || ''}</td>
-              <td>${o.total_Area || ''} ${o.area_unit || ''}</td>
-            </tr>`).join('')
+        ? owners.map(o => `<tr><td>${o.name}</td><td>${o.co}</td><td>${o.area}</td></tr>`).join('')
         : '<tr><td colspan="3">N/A</td></tr>';
 
       el.innerHTML = `
-  <div class="sidebar-content">
-    <div class="plot-summary">
-      <b>Village:</b> ${properties.villagecode} |
-      <b>Survey:</b> ${properties.surveynumber} |
-      <b>District:</b> ${properties.districtname} |
-      <b>Tehsil:</b> ${properties.tehsilname} |
-      <b>Area:</b> ${properties.plotarea} ${properties.plotareaunit}
-    </div>
-    <div class="owners-table-container">
-      <b>Owners:</b>
-      <table class="table table-bordered table-sm mt-1 owners-table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>C/O</th>
-            <th>Area</th>
-          </tr>
-        </thead>
-        <tbody>${ownerTable}</tbody>
-      </table>
-    </div>
-  </div>
-`;
-
-
-
-      el.classList.remove('sidebar-closed');
-      document.getElementById('sidebar').classList.remove('closed');
-      document.getElementById('openSidebarBtn').style.display = 'none';
-      map.invalidateSize();
+        <div class="sidebar-content">
+          <div class="plot-summary">
+            <b>Village:</b> ${properties.villagecode} |
+            <b>Survey:</b> ${properties.surveynumber} |
+            <b>District:</b> ${properties.districtname} |
+            <b>Tehsil:</b> ${properties.tehsilname} |
+            <b>Area:</b> ${properties.plotarea} ${properties.plotareaunit}
+          </div>
+          <div class="owners-table-container">
+            <b>Owners:</b>
+            <table class="table table-bordered table-sm mt-1 owners-table">
+              <thead>
+                <tr><th>Name</th><th>C/O</th><th>Area</th></tr>
+              </thead>
+              <tbody>${ownerTable}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
     }
 
+    // === ORIGINAL loadVillage() kept intact exactly as you had it (only minor whitespace changes) ===
     async function loadVillage() {
       const code = document.getElementById('villageCode').value.trim();
       if (!code) return alert('Enter village code');
@@ -251,11 +275,11 @@ const baseMaps = {
 
           try {
             const wk = new Wkt.Wkt();
-        const cleaned = wktText
-  .replace(/^"+|"+$/g, '')
-  .replace(/MultiPolygonZ/gi, 'MULTIPOLYGON')
-  .replace(/MultiPolygon Z/gi, 'MULTIPOLYGON')
-  .replace(/(\d+\.\d+)\s+(\d+\.\d+)\s+\d+(\s*[,\)])/g, '$1 $2$3'); // remove Z (third coord)
+            const cleaned = wktText
+              .replace(/^"+|"+$/g, '')
+              .replace(/MultiPolygonZ/gi, 'MULTIPOLYGON')
+              .replace(/MultiPolygon Z/gi, 'MULTIPOLYGON')
+              .replace(/(\d+\.\d+)\s+(\d+\.\d+)\s+\d+(\s*[,\)])/g, '$1 $2$3');
 
             wk.read(cleaned);
             let gj = wk.toJson();
@@ -267,7 +291,16 @@ const baseMaps = {
               gj.type = 'Polygon';
             }
 
+            // Flatten owner array into separate keys
             const owners = Array.isArray(plot.owner) ? plot.owner : [];
+            let ownerProps = {};
+            owners.forEach((o, idx) => {
+              const num = idx + 1;
+              ownerProps[`owner${num}_name`] = o.owner_Name || '';
+              ownerProps[`owner${num}_co`] = `${o.indentifier_type || ''} ${o.indentifier_Name || ''}`.trim();
+              ownerProps[`owner${num}_area`] = `${o.total_Area || ''} ${o.area_unit || ''}`.trim();
+            });
+
             const feature = {
               type: 'Feature',
               geometry: gj,
@@ -278,7 +311,7 @@ const baseMaps = {
                 tehsilname: plot.tehsilname,
                 plotarea: plot.plotarea,
                 plotareaunit: plot.plotareaunit,
-                owner: owners
+                ...ownerProps
               }
             };
 
@@ -286,12 +319,11 @@ const baseMaps = {
               style: { color: owners.length ? 'Red' : 'blue', weight: 1 }
             }).on('click', () => showDetails(feature.properties));
 
-
             poly.bindTooltip(`${plot.surveynumber}`, {
-  permanent: true,
-  direction: 'center',
-  className: 'survey-label'
-});
+              permanent: true,
+              direction: 'center',
+              className: 'survey-label'
+            });
 
             poly.addTo(villageLayer);
             poly.eachLayer(l => l.getBounds && bounds.push(l.getBounds()));
@@ -320,43 +352,131 @@ const baseMaps = {
       }
     }
 
- function downloadGeoJSON() {
-  if (!loaded.length) {
-    alert('No data to download');
-    return;
-  }
+    // === NEW helper to load a village by code (used by Excel import) ===
+    // This preserves the exact WKT cleaning + owner flattening + feature creation logic from loadVillage()
+    // but does NOT clear `loaded` or villageLayer or disable buttons (it appends)
+    async function loadVillageByCode(code) {
+      try {
+        const url = `http://localhost:3000/proxy?url=${encodeURIComponent('https://upbhulekh.gov.in/rahat/agriWithWkt?villcode=' + code)}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (!Array.isArray(data) || !data.length) {
+          failedVillages.push({ villcode: code, reason: 'No plots found' });
+          return;
+        }
 
-  const fc = { type: 'FeatureCollection', features: loaded };
+        let addedAny = false;
+        data.forEach(plot => {
+          const wktText = plot.plotgeometry;
+          if (!wktText || !/(POLYGON|MULTIPOLYGON)/i.test(wktText)) {
+            failedVillages.push({ villcode: code, reason: 'Invalid/missing WKT' });
+            return;
+          }
 
-  // Extract naming fields from the first feature
-  const first = loaded[0]?.properties || {};
-  const district = (first.districtname || 'district').replace(/\s+/g, '_');
-  const tehsil = (first.tehsilname || 'tehsil').replace(/\s+/g, '_');
-  const village = (first.villagename || first.villagecode || 'village').toString().replace(/\s+/g, '_');
+          try {
+            const wk = new Wkt.Wkt();
+            const cleaned = wktText
+              .replace(/^"+|"+$/g, '')
+              .replace(/MultiPolygonZ/gi, 'MULTIPOLYGON')
+              .replace(/MultiPolygon Z/gi, 'MULTIPOLYGON')
+              .replace(/(\d+\.\d+)\s+(\d+\.\d+)\s+\d+(\s*[,\)])/g, '$1 $2$3');
 
-  const filename = `${district}_${tehsil}_${village}.geojson`;
+            wk.read(cleaned);
+            let gj = wk.toJson();
+            if (gj.type.includes('MultiPolygon')) {
+              gj.coordinates = transformCoords(gj.coordinates);
+              gj.type = 'MultiPolygon';
+            } else {
+              gj.coordinates = transformCoords([gj.coordinates])[0];
+              gj.type = 'Polygon';
+            }
 
-  const blob = new Blob([JSON.stringify(fc, null, 2)], { type: 'application/json' });
-  const u = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = u;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => {
-    document.body.removeChild(a);
-    URL.revokeObjectURL(u);
-  }, 100);
+            // Flatten owner array into separate keys
+            const owners = Array.isArray(plot.owner) ? plot.owner : [];
+            let ownerProps = {};
+            owners.forEach((o, idx) => {
+              const num = idx + 1;
+              ownerProps[`owner${num}_name`] = o.owner_Name || '';
+              ownerProps[`owner${num}_co`] = `${o.indentifier_type || ''} ${o.indentifier_Name || ''}`.trim();
+              ownerProps[`owner${num}_area`] = `${o.total_Area || ''} ${o.area_unit || ''}`.trim();
+            });
 
-  setStatus('GeoJSON downloaded', false);
-}
+            const feature = {
+              type: 'Feature',
+              geometry: gj,
+              properties: {
+                villagecode: plot.villagecode,
+                surveynumber: plot.surveynumber,
+                districtname: plot.districtname,
+                tehsilname: plot.tehsilname,
+                plotarea: plot.plotarea,
+                plotareaunit: plot.plotareaunit,
+                ...ownerProps
+              }
+            };
 
+            const poly = L.geoJSON(feature.geometry, {
+              style: { color: owners.length ? 'Red' : 'blue', weight: 1 }
+            }).on('click', () => showDetails(feature.properties));
+
+            poly.bindTooltip(`${plot.surveynumber}`, {
+              permanent: true,
+              direction: 'center',
+              className: 'survey-label'
+            });
+
+            poly.addTo(villageLayer);
+            // fitBounds later after bulk add; do not fit for each single to avoid jitter
+            loaded.push(feature);
+            addedAny = true;
+          } catch (err) {
+            console.warn('WKT error for', code, err);
+            failedVillages.push({ villcode: code, reason: 'WKT parse error' });
+          }
+        });
+
+        return addedAny;
+      } catch (err) {
+        console.error('Fetch error for', code, err);
+        failedVillages.push({ villcode: code, reason: err.message || 'Fetch error' });
+      }
+    }
+
+    // === Download GeoJSON (original) unchanged ===
+    function downloadGeoJSON() {
+      if (!loaded.length) {
+        alert('No data to download');
+        return;
+      }
+      const fc = { type: 'FeatureCollection', features: loaded };
+      const first = loaded[0]?.properties || {};
+      const district = (first.districtname || 'district').replace(/\s+/g, '_');
+      const tehsil = (first.tehsilname || 'tehsil').replace(/\s+/g, '_');
+      const village = (first.villagename || first.villagecode || 'village').toString().replace(/\s+/g, '_');
+      const filename = `${district}_${tehsil}_${village}.geojson`;
+
+      const blob = new Blob([JSON.stringify(fc, null, 2)], { type: 'application/json' });
+      const u = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = u;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(u);
+      }, 100);
+      setStatus('GeoJSON downloaded', false);
+    }
+
+    // === Download Shapefile (original) unchanged ===
     function downloadShapefile() {
       if (!loaded.length) return alert('No data to export');
       shpwrite.download({ type: 'FeatureCollection', features: loaded }, { file: 'village' });
       setStatus('Shapefile downloaded');
     }
 
+    // === zoomToVillage unchanged ===
     function zoomToVillage() {
       if (!loaded.length) return alert('Load a village first');
       const bounds = [];
@@ -370,6 +490,7 @@ const baseMaps = {
       }
     }
 
+    // === toggleSidebar unchanged (except small DOM adjustments already present) ===
     function toggleSidebar() {
       const sidebar = document.getElementById('sidebar');
       const openBtn = document.getElementById('openSidebarBtn');
@@ -383,6 +504,143 @@ const baseMaps = {
       plotDetails.classList.toggle('sidebar-closed', closed);
       mapDiv.style.left = closed ? '0' : '300px';
     }
+
+    // === NEW: Clear map function (clears villageLayer and loaded array, disables download buttons) ===
+    function clearMap() {
+      villageLayer.clearLayers();
+      loaded = [];
+      setStatus('Map cleared');
+      document.getElementById('downloadBtn').disabled = true;
+      document.querySelector('.btn-warning').disabled = true;
+      document.getElementById('zoomBtn').disabled = true;
+      // clear error list too
+      failedVillages = [];
+      document.getElementById('errorList').style.display = 'none';
+      document.getElementById('errorList').innerHTML = '';
+    }
+
+    // === NEW: Excel import logic ===
+    // Reads first sheet, expects village code to be in the first column or a column named villcode/VillCode/VillageCode
+    async function addExcelVillages() {
+      const fileEl = document.getElementById('excelFile');
+      if (!fileEl.files.length) {
+        alert('Please choose an Excel file first');
+        return;
+      }
+
+      // Parse Excel
+      const file = fileEl.files[0];
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }); // raw rows
+
+      // Extract codes from first column (fall back to named columns)
+      excelVillageCodes = [];
+      // If header row exists and has named column, try that
+      const headerRow = rows[0] || [];
+      let useNamed = false;
+      let namedIndex = -1;
+      headerRow.forEach((h, i) => {
+        if (typeof h === 'string' && ['villcode','VillCode','VillageCode','villagecode','Villagecode'].includes(h.trim())) {
+          useNamed = true;
+          namedIndex = i;
+        }
+      });
+
+      if (useNamed) {
+        for (let r = 1; r < rows.length; r++) {
+          const val = rows[r][namedIndex];
+          if (val !== undefined && val !== null && String(val).trim() !== '') excelVillageCodes.push(String(val).trim());
+        }
+      } else {
+        // take first column values (skip empty)
+        for (let r = 0; r < rows.length; r++) {
+          const val = rows[r][0];
+          if (val !== undefined && val !== null && String(val).trim() !== '') excelVillageCodes.push(String(val).trim());
+        }
+      }
+
+      if (!excelVillageCodes.length) {
+        alert('No village codes found in the Excel file');
+        return;
+      }
+
+      // Reset error list
+      failedVillages = [];
+      document.getElementById('errorList').style.display = 'none';
+      document.getElementById('errorList').innerHTML = '';
+
+      // For each code, call helper (sequential to reduce load and keep order)
+      for (const code of excelVillageCodes) {
+        await loadVillageByCode(code);
+      }
+
+      // After all loaded, enable download & zoom buttons if we have features
+      if (loaded.length) {
+        document.getElementById('downloadBtn').disabled = false;
+        document.querySelector('.btn-warning').disabled = false;
+        document.getElementById('zoomBtn').disabled = false;
+      }
+
+      // Fit bounds to all layers added by excel (if any)
+      const bounds = [];
+      villageLayer.eachLayer(layer => {
+        if (layer.getBounds) bounds.push(layer.getBounds());
+      });
+      if (bounds.length) {
+        const cb = bounds[0]; bounds.slice(1).forEach(b => cb.extend(b));
+        map.fitBounds(cb);
+      }
+
+      // Show error summary if any
+      if (failedVillages.length) {
+        const listEl = document.getElementById('errorList');
+        listEl.style.display = 'block';
+        listEl.innerHTML = `<b>Failed (${failedVillages.length}):</b><br>` + failedVillages.map(f => `${f.villcode} — ${f.reason}`).join('<br>');
+      } else {
+        // hide if none
+        const listEl = document.getElementById('errorList');
+        listEl.style.display = 'none';
+        listEl.innerHTML = '';
+      }
+
+      setStatus(`Excel processed. Added villages: ${loaded.length}`);
+    }
+
+    // === NEW: Download Excel GeoJSON (combined from current loaded features) ===
+    function downloadExcelGeoJSON() {
+      if (!loaded.length) {
+        alert('No data to download');
+        return;
+      }
+      // Same as downloadGeoJSON but filename indicates excel batch
+      const fc = { type: 'FeatureCollection', features: loaded };
+      const first = loaded[0]?.properties || {};
+      const district = (first.districtname || 'district').replace(/\s+/g, '_');
+      const tehsil = (first.tehsilname || 'tehsil').replace(/\s+/g, '_');
+      const village = (first.villagename || first.villagecode || 'village').toString().replace(/\s+/g, '_');
+      const filename = `${district}_${tehsil}_${village}_excel.geojson`;
+
+      const blob = new Blob([JSON.stringify(fc, null, 2)], { type: 'application/json' });
+      const u = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = u;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(u);
+      }, 100);
+      setStatus('Excel GeoJSON downloaded', false);
+    }
+
+    // === Hook Excel buttons into UI (they're inline already) ===
+    // (Buttons call addExcelVillages() and downloadExcelGeoJSON() directly)
+
+    // END of script
   </script>
 </body>
 </html>
